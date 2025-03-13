@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>数字华容道</title>
+    <meta name="description" content="一个精美的数字华容道拼图游戏">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="数字华容道">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            overscroll-behavior: none;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .title {
+            text-align: center;
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .signature {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            margin-top: 20px;
+            font-style: italic;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin: 5px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        /* 华容道样式 */
+        .puzzle-container {
+            width: 300px;
+            height: 300px;
+            margin: 20px auto;
+            position: relative;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            padding: 5px;
+            touch-action: none;
+        }
+        .puzzle-tile {
+            width: 90px;
+            height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: move;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+            position: absolute;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: top 0.2s, left 0.2s;
+            user-select: none;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .puzzle-tile:hover {
+            opacity: 0.9;
+        }
+        .puzzle-tile.dragging {
+            z-index: 10;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            transition: none;
+        }
+        .empty {
+            background-color: transparent;
+            box-shadow: none;
+        }
+        .puzzle-info {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 18px;
+        }
+        .success-message {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(76, 175, 80, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 24px;
+            text-align: center;
+            z-index: 1000;
+        }
+        /* 安装提示样式 */
+        .install-prompt {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            text-align: center;
+            z-index: 1000;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 10px;
+            }
+            .puzzle-container {
+                width: 270px;
+                height: 270px;
+            }
+            .puzzle-tile {
+                width: 80px;
+                height: 80px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">数字华容道</div>
+        <div class="puzzle-info">步数：<span id="moves">0</span></div>
+        <div class="puzzle-container" id="puzzle"></div>
+        <div style="text-align: center; margin-top: 10px;">
+            <button id="newGameBtn">开始新游戏</button>
+        </div>
+    </div>
+
+    <div class="success-message" id="successMessage">
+        你真厉害！<br>
+        完成步数：<span id="finalMoves">0</span>
+    </div>
+
+    <div class="install-prompt" id="installPrompt">
+        添加到主屏幕以获得最佳体验
+    </div>
+
+    <script>
+        // 注册Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {
+                        console.log('Service Worker 注册成功:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker 注册失败:', error);
+                    });
+            });
+        }
+
+        // 显示安装提示
+        let deferredPrompt;
+        const installPrompt = document.getElementById('installPrompt');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installPrompt.style.display = 'block';
+
+            setTimeout(() => {
+                installPrompt.style.display = 'none';
+            }, 5000);
+        });
+
+        installPrompt.addEventListener('click', () => {
+            installPrompt.style.display = 'none';
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    deferredPrompt = null;
+                });
+            }
+        });
+
+        // 增加触摸支持
+        function addTouchSupport() {
+            let touchTileIndex = -1;
+            let touchStartX = 0;
+            let touchStartY = 0;
+
+            // 监听触摸事件
+            document.addEventListener('touchstart', handleTouchStart, { passive: false });
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+            function handleTouchStart(e) {
+                const touch = e.touches[0];
+                const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                
+                if (element && element.classList.contains('puzzle-tile') && !element.classList.contains('empty')) {
+                    e.preventDefault();
+                    
+                    // 获取触摸的方块在拼图数组中的索引
+                    const value = parseInt(element.textContent);
+                    touchTileIndex = puzzle.indexOf(value);
+                    
+                    // 检查是否与空白位置相邻
+                    const emptyIndex = puzzle.indexOf(null);
+                    if (isAdjacent(touchTileIndex, emptyIndex)) {
+                        isDragging = true;
+                        dragTile = element;
+                        
+                        // 记录起始位置
+                        touchStartX = touch.clientX;
+                        touchStartY = touch.clientY;
+                        originalLeft = parseInt(element.style.left);
+                        originalTop = parseInt(element.style.top);
+                        
+                        // 添加拖动样式
+                        element.classList.add('dragging');
+                    }
+                }
+            }
+
+            function handleTouchMove(e) {
+                if (!isDragging || !dragTile || touchTileIndex === -1) return;
+                
+                e.preventDefault();
+                const touch = e.touches[0];
+                
+                // 计算移动距离
+                const dx = touch.clientX - touchStartX;
+                const dy = touch.clientY - touchStartY;
+                
+                // 获取空白位置
+                const emptyIndex = puzzle.indexOf(null);
+                const emptyRow = Math.floor(emptyIndex / SIZE);
+                const emptyCol = emptyIndex % SIZE;
+                const emptyLeft = emptyCol * (TILE_SIZE + GAP) + GAP;
+                const emptyTop = emptyRow * (TILE_SIZE + GAP) + GAP;
+                
+                // 基于空白位置限制移动方向
+                let newLeft = originalLeft;
+                let newTop = originalTop;
+                
+                if (originalTop === emptyTop) {
+                    // 水平移动
+                    newLeft = originalLeft + dx;
+                    // 限制在空白位置范围内
+                    if (originalLeft < emptyLeft) {
+                        newLeft = Math.min(Math.max(newLeft, originalLeft), emptyLeft);
+                    } else {
+                        newLeft = Math.max(Math.min(newLeft, originalLeft), emptyLeft);
+                    }
+                } else if (originalLeft === emptyLeft) {
+                    // 垂直移动
+                    newTop = originalTop + dy;
+                    // 限制在空白位置范围内
+                    if (originalTop < emptyTop) {
+                        newTop = Math.min(Math.max(newTop, originalTop), emptyTop);
+                    } else {
+                        newTop = Math.max(Math.min(newTop, originalTop), emptyTop);
+                    }
+                }
+                
+                // 更新位置
+                dragTile.style.left = `${newLeft}px`;
+                dragTile.style.top = `${newTop}px`;
+            }
+
+            function handleTouchEnd(e) {
+                if (!isDragging || !dragTile || touchTileIndex === -1) return;
+                
+                e.preventDefault();
+                
+                // 获取当前拖动的方块和空白位置
+                const currentLeft = parseInt(dragTile.style.left);
+                const currentTop = parseInt(dragTile.style.top);
+                const emptyIndex = puzzle.indexOf(null);
+                const emptyRow = Math.floor(emptyIndex / SIZE);
+                const emptyCol = emptyIndex % SIZE;
+                const emptyLeft = emptyCol * (TILE_SIZE + GAP) + GAP;
+                const emptyTop = emptyRow * (TILE_SIZE + GAP) + GAP;
+                
+                // 判断是否移动到位（靠近空白位置中心）
+                const thresholdDistance = (TILE_SIZE + GAP) / 2;
+                const movedToEmpty = 
+                    (Math.abs(currentLeft - emptyLeft) < thresholdDistance && currentTop === emptyTop) ||
+                    (Math.abs(currentTop - emptyTop) < thresholdDistance && currentLeft === emptyLeft);
+                
+                // 移除拖动样式
+                dragTile.classList.remove('dragging');
+                
+                if (movedToEmpty) {
+                    // 交换位置
+                    [puzzle[touchTileIndex], puzzle[emptyIndex]] = [puzzle[emptyIndex], puzzle[touchTileIndex]];
+                    
+                    // 增加移动步数
+                    moves++;
+                    updateMovesDisplay();
+                    
+                    // 重新渲染
+                    renderPuzzle();
+                    
+                    // 检查是否完成
+                    if (isComplete()) {
+                        showSuccess();
+                    }
+                } else {
+                    // 恢复原始位置
+                    dragTile.style.left = `${originalLeft}px`;
+                    dragTile.style.top = `${originalTop}px`;
+                }
+                
+                // 重置拖动状态
+                isDragging = false;
+                dragTile = null;
+                touchTileIndex = -1;
+            }
+        }
+
+        // 颜色数组
+        const colors = [
+            '#FF69B4',  // 粉红色
+            '#FF1493',  // 深粉红色
+            '#FFC0CB',  // 浅粉红色
+            '#FFD700',  // 金黄色
+            '#FFA500',  // 橙色
+            '#FFE4B5',  // 浅黄色
+            '#87CEEB',  // 天蓝色
+            '#00BFFF'   // 深天蓝色
+        ];
+
+        // 游戏变量
+        let puzzle = [];
+        let moves = 0;
+        const SIZE = 3;
+        const TILE_SIZE = window.innerWidth < 600 ? 80 : 90;
+        const GAP = 5;
+        let isDragging = false;
+        let dragTile = null;
+        let startX = 0;
+        let startY = 0;
+        let originalLeft = 0;
+        let originalTop = 0;
+
+        // DOM元素
+        const puzzleContainer = document.getElementById('puzzle');
+        const movesDisplay = document.getElementById('moves');
+        const successMessage = document.getElementById('successMessage');
+        const finalMovesDisplay = document.getElementById('finalMoves');
+        const newGameBtn = document.getElementById('newGameBtn');
+
+        // 初始化游戏
+        newGameBtn.addEventListener('click', initGame);
+
+        // 初始化游戏
+        function initGame() {
+            // 清空容器
+            puzzleContainer.innerHTML = '';
+            moves = 0;
+            updateMovesDisplay();
+
+            // 创建初始拼图状态
+            puzzle = Array.from({length: SIZE * SIZE - 1}, (_, i) => i + 1);
+            puzzle.push(null); // 空格
+
+            // 打乱拼图
+            shufflePuzzle();
+            
+            // 渲染拼图
+            renderPuzzle();
+        }
+
+        // 打乱拼图
+        function shufflePuzzle() {
+            // 打乱数组
+            for (let i = puzzle.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [puzzle[i], puzzle[j]] = [puzzle[j], puzzle[i]];
+            }
+            
+            // 确保可解
+            if (!isSolvable()) {
+                // 交换前两个非空元素
+                let first = puzzle.findIndex(v => v !== null);
+                let second = puzzle.findIndex((v, i) => v !== null && i > first);
+                [puzzle[first], puzzle[second]] = [puzzle[second], puzzle[first]];
+            }
+        }
+
+        // 判断拼图是否可解
+        function isSolvable() {
+            let inversions = 0;
+            let emptyRow = Math.floor(puzzle.indexOf(null) / SIZE);
+            
+            // 计算逆序数
+            for (let i = 0; i < puzzle.length; i++) {
+                if (puzzle[i] === null) continue;
+                for (let j = i + 1; j < puzzle.length; j++) {
+                    if (puzzle[j] !== null && puzzle[i] > puzzle[j]) {
+                        inversions++;
+                    }
+                }
+            }
+            
+            // 判断3x3情况下的可解性
+            if (SIZE % 2 === 1) {
+                return inversions % 2 === 0;
+            } else {
+                return (inversions + emptyRow) % 2 === 1;
+            }
+        }
+
+        // 渲染拼图
+        function renderPuzzle() {
+            puzzleContainer.innerHTML = '';
+            
+            puzzle.forEach((value, index) => {
+                const tile = document.createElement('div');
+                const row = Math.floor(index / SIZE);
+                const col = index % SIZE;
+                
+                tile.className = `puzzle-tile ${value === null ? 'empty' : ''}`;
+                tile.textContent = value || '';
+                
+                if (value !== null) {
+                    tile.style.backgroundColor = colors[value - 1];
+                    // 添加拖拽和点击事件
+                    tile.addEventListener('mousedown', (e) => handleMouseDown(e, tile, index, value));
+                    tile.addEventListener('click', () => moveTile(index));
+                }
+                
+                // 设置位置
+                tile.style.left = `${col * (TILE_SIZE + GAP) + GAP}px`;
+                tile.style.top = `${row * (TILE_SIZE + GAP) + GAP}px`;
+                
+                puzzleContainer.appendChild(tile);
+            });
+        }
+
+        // 鼠标按下事件处理
+        function handleMouseDown(e, tile, tileIndex, value) {
+            e.preventDefault();
+            const emptyIndex = puzzle.indexOf(null);
+            
+            // 只有相邻的方块才能拖动
+            if (isAdjacent(tileIndex, emptyIndex)) {
+                isDragging = true;
+                dragTile = tile;
+                
+                // 记录起始位置
+                startX = e.clientX;
+                startY = e.clientY;
+                originalLeft = parseInt(tile.style.left);
+                originalTop = parseInt(tile.style.top);
+                
+                // 添加拖动样式
+                tile.classList.add('dragging');
+                
+                // 添加鼠标移动和松开事件
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
+            }
+        }
+        
+        // 鼠标移动事件处理
+        function handleMouseMove(e) {
+            if (!isDragging || !dragTile) return;
+            
+            // 计算移动距离
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            // 获取空白位置
+            const emptyIndex = puzzle.indexOf(null);
+            const emptyRow = Math.floor(emptyIndex / SIZE);
+            const emptyCol = emptyIndex % SIZE;
+            const emptyLeft = emptyCol * (TILE_SIZE + GAP) + GAP;
+            const emptyTop = emptyRow * (TILE_SIZE + GAP) + GAP;
+            
+            // 基于空白位置限制移动方向
+            let newLeft = originalLeft;
+            let newTop = originalTop;
+            
+            if (originalTop === emptyTop) {
+                // 水平移动
+                newLeft = originalLeft + dx;
+                // 限制在空白位置范围内
+                if (originalLeft < emptyLeft) {
+                    newLeft = Math.min(Math.max(newLeft, originalLeft), emptyLeft);
+                } else {
+                    newLeft = Math.max(Math.min(newLeft, originalLeft), emptyLeft);
+                }
+            } else if (originalLeft === emptyLeft) {
+                // 垂直移动
+                newTop = originalTop + dy;
+                // 限制在空白位置范围内
+                if (originalTop < emptyTop) {
+                    newTop = Math.min(Math.max(newTop, originalTop), emptyTop);
+                } else {
+                    newTop = Math.max(Math.min(newTop, originalTop), emptyTop);
+                }
+            }
+            
+            // 更新位置
+            dragTile.style.left = `${newLeft}px`;
+            dragTile.style.top = `${newTop}px`;
+        }
+        
+        // 鼠标松开事件处理
+        function handleMouseUp() {
+            if (!isDragging || !dragTile) return;
+            
+            // 移除事件监听
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            
+            // 获取当前拖动的方块和空白位置
+            const currentLeft = parseInt(dragTile.style.left);
+            const currentTop = parseInt(dragTile.style.top);
+            const emptyIndex = puzzle.indexOf(null);
+            const emptyRow = Math.floor(emptyIndex / SIZE);
+            const emptyCol = emptyIndex % SIZE;
+            const emptyLeft = emptyCol * (TILE_SIZE + GAP) + GAP;
+            const emptyTop = emptyRow * (TILE_SIZE + GAP) + GAP;
+            
+            // 判断是否移动到位（靠近空白位置中心）
+            const thresholdDistance = (TILE_SIZE + GAP) / 2;
+            const movedToEmpty = 
+                (Math.abs(currentLeft - emptyLeft) < thresholdDistance && currentTop === emptyTop) ||
+                (Math.abs(currentTop - emptyTop) < thresholdDistance && currentLeft === emptyLeft);
+            
+            // 移除拖动样式
+            dragTile.classList.remove('dragging');
+            
+            if (movedToEmpty) {
+                // 找到拖动的方块索引
+                const tileIndex = puzzle.findIndex(v => v === parseInt(dragTile.textContent));
+                
+                // 交换位置
+                [puzzle[tileIndex], puzzle[emptyIndex]] = [puzzle[emptyIndex], puzzle[tileIndex]];
+                
+                // 增加移动步数
+                moves++;
+                updateMovesDisplay();
+                
+                // 重新渲染
+                renderPuzzle();
+                
+                // 检查是否完成
+                if (isComplete()) {
+                    showSuccess();
+                }
+            } else {
+                // 恢复原始位置
+                dragTile.style.left = `${originalLeft}px`;
+                dragTile.style.top = `${originalTop}px`;
+            }
+            
+            // 重置拖动状态
+            isDragging = false;
+            dragTile = null;
+        }
+
+        // 移动方块
+        function moveTile(tileIndex) {
+            const emptyIndex = puzzle.indexOf(null);
+            
+            // 检查是否可以移动（是否相邻）
+            if (isAdjacent(tileIndex, emptyIndex)) {
+                // 交换位置
+                [puzzle[tileIndex], puzzle[emptyIndex]] = [puzzle[emptyIndex], puzzle[tileIndex]];
+                
+                // 增加移动步数
+                moves++;
+                updateMovesDisplay();
+                
+                // 重新渲染
+                renderPuzzle();
+                
+                // 检查是否完成
+                if (isComplete()) {
+                    showSuccess();
+                }
+            }
+        }
+
+        // 判断两个位置是否相邻
+        function isAdjacent(index1, index2) {
+            const row1 = Math.floor(index1 / SIZE);
+            const col1 = index1 % SIZE;
+            const row2 = Math.floor(index2 / SIZE);
+            const col2 = index2 % SIZE;
+            
+            return (
+                (Math.abs(row1 - row2) === 1 && col1 === col2) || 
+                (Math.abs(col1 - col2) === 1 && row1 === row2)
+            );
+        }
+
+        // 判断是否完成
+        function isComplete() {
+            for (let i = 0; i < puzzle.length - 1; i++) {
+                if (puzzle[i] !== i + 1) return false;
+            }
+            return puzzle[puzzle.length - 1] === null;
+        }
+
+        // 显示成功消息
+        function showSuccess() {
+            finalMovesDisplay.textContent = moves;
+            successMessage.style.display = 'block';
+            setTimeout(() => {
+                successMessage.style.display = 'none';
+            }, 3000);
+        }
+
+        // 更新移动步数显示
+        function updateMovesDisplay() {
+            movesDisplay.textContent = moves;
+        }
+
+        // 添加触摸支持
+        addTouchSupport();
+
+        // 开始游戏
+        initGame();
+
+        // 禁止双击缩放
+        document.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+        });
+    </script>
+</body>
+</html> 
